@@ -1,4 +1,6 @@
-# Capella -- Fork Logic
+# EIP-6110 -- Fork Logic
+
+**Notice**: This document is a work-in-progress for researchers and implementers.
 
 ## Table of contents
 
@@ -10,7 +12,7 @@
 - [Helper functions](#helper-functions)
   - [Misc](#misc)
     - [Modified `compute_fork_version`](#modified-compute_fork_version)
-- [Fork to Capella](#fork-to-capella)
+- [Fork to EIP-6110](#fork-to-eip-6110)
   - [Fork trigger](#fork-trigger)
   - [Upgrading the state](#upgrading-the-state)
 
@@ -18,7 +20,7 @@
 
 ## Introduction
 
-This document describes the process of the Capella upgrade.
+This document describes the process of EIP-6110 upgrade.
 
 ## Configuration
 
@@ -26,9 +28,8 @@ Warning: this configuration is not definitive.
 
 | Name | Value |
 | - | - |
-| `CAPELLA_FORK_VERSION` | `Version('0x03000000')` |
-| `CAPELLA_FORK_EPOCH` | `Epoch(194048)` (April 12, 2023, 10:27:35pm UTC) |
-
+| `EIP6110_FORK_VERSION` | `Version('0x05000000')` |
+| `EIP6110_FORK_EPOCH` | `Epoch(18446744073709551615)` **TBD** |
 
 ## Helper functions
 
@@ -41,6 +42,8 @@ def compute_fork_version(epoch: Epoch) -> Version:
     """
     Return the fork version at the given ``epoch``.
     """
+    if epoch >= EIP6110_FORK_EPOCH:
+        return EIP6110_FORK_EPOCH
     if epoch >= CAPELLA_FORK_EPOCH:
         return CAPELLA_FORK_VERSION
     if epoch >= BELLATRIX_FORK_EPOCH:
@@ -50,26 +53,23 @@ def compute_fork_version(epoch: Epoch) -> Version:
     return GENESIS_FORK_VERSION
 ```
 
-## Fork to Capella
+## Fork to EIP-6110
 
 ### Fork trigger
 
-The fork is triggered at epoch `CAPELLA_FORK_EPOCH`.
+TBD. This fork is defined for testing purposes, the EIP may be combined with other consensus-layer upgrade.
+For now, we assume the condition will be triggered at epoch `EIP6110_FORK_EPOCH`.
 
-Note that for the pure Capella networks, we don't apply `upgrade_to_capella` since it starts with Capella version logic.
+Note that for the pure EIP-6110 networks, we don't apply `upgrade_to_eip6110` since it starts with EIP-6110 version logic.
 
 ### Upgrading the state
 
-If `state.slot % SLOTS_PER_EPOCH == 0` and `compute_epoch_at_slot(state.slot) == CAPELLA_FORK_EPOCH`,
-an irregular state change is made to upgrade to Capella.
-
-The upgrade occurs after the completion of the inner loop of `process_slots` that sets `state.slot` equal to `CAPELLA_FORK_EPOCH * SLOTS_PER_EPOCH`.
-Care must be taken when transitioning through the fork boundary as implementations will need a modified [state transition function](../phase0/beacon-chain.md#beacon-chain-state-transition-function) that deviates from the Phase 0 document.
-In particular, the outer `state_transition` function defined in the Phase 0 document will not expose the precise fork slot to execute the upgrade in the presence of skipped slots at the fork boundary. Instead, the logic must be within `process_slots`.
+If `state.slot % SLOTS_PER_EPOCH == 0` and `compute_epoch_at_slot(state.slot) == EIP6110_FORK_EPOCH`,
+an irregular state change is made to upgrade to EIP-6110.
 
 ```python
-def upgrade_to_capella(pre: bellatrix.BeaconState) -> BeaconState:
-    epoch = bellatrix.get_current_epoch(pre)
+def upgrade_to_eip6110(pre: capella.BeaconState) -> BeaconState:
+    epoch = capella.get_current_epoch(pre)
     latest_execution_payload_header = ExecutionPayloadHeader(
         parent_hash=pre.latest_execution_payload_header.parent_hash,
         fee_recipient=pre.latest_execution_payload_header.fee_recipient,
@@ -85,7 +85,8 @@ def upgrade_to_capella(pre: bellatrix.BeaconState) -> BeaconState:
         base_fee_per_gas=pre.latest_execution_payload_header.base_fee_per_gas,
         block_hash=pre.latest_execution_payload_header.block_hash,
         transactions_root=pre.latest_execution_payload_header.transactions_root,
-        withdrawals_root=Root(),  # [New in Capella]
+        withdrawals_root=pre.latest_execution_payload_header.withdrawals_root,
+        deposit_receipts_root=Root(),  # [New in EIP-6110]
     )
     post = BeaconState(
         # Versioning
@@ -94,7 +95,7 @@ def upgrade_to_capella(pre: bellatrix.BeaconState) -> BeaconState:
         slot=pre.slot,
         fork=Fork(
             previous_version=pre.fork.current_version,
-            current_version=CAPELLA_FORK_VERSION,
+            current_version=EIP6110_FORK_VERSION,  # [Modified in EIP-6110]
             epoch=epoch,
         ),
         # History
@@ -127,12 +128,14 @@ def upgrade_to_capella(pre: bellatrix.BeaconState) -> BeaconState:
         current_sync_committee=pre.current_sync_committee,
         next_sync_committee=pre.next_sync_committee,
         # Execution-layer
-        latest_execution_payload_header=latest_execution_payload_header,
+        latest_execution_payload_header=latest_execution_payload_header,  # [Modified in EIP-6110]
         # Withdrawals
-        next_withdrawal_index=WithdrawalIndex(0),  # [New in Capella]
-        next_withdrawal_validator_index=ValidatorIndex(0),  # [New in Capella]
+        next_withdrawal_index=pre.next_withdrawal_index,
+        next_withdrawal_validator_index=pre.next_withdrawal_validator_index,
         # Deep history valid from Capella onwards
-        historical_summaries=List[HistoricalSummary, HISTORICAL_ROOTS_LIMIT]([]),  # [New in Capella]
+        historical_summaries=pre.historical_summaries,
+        # EIP-6110
+        deposit_receipts_start_index=UNSET_DEPOSIT_RECEIPTS_START_INDEX,  # [New in EIP-6110]
     )
 
     return post
